@@ -3,6 +3,8 @@ import { around } from "monkey-around";
 import { addEdge, addNode, buildTrees, createChildFileNode, random } from "./utils";
 import { DEFAULT_SETTINGS, MindMapSettings, MindMapSettingTab } from "./mindMapSettings";
 import { CanvasEdgeData } from "obsidian/canvas";
+import { dir } from 'console';
+import { send } from 'process';
 
 const createEdge = async (node1: any, node2: any, canvas: any) => {
 
@@ -18,41 +20,102 @@ const createEdge = async (node1: any, node2: any, canvas: any) => {
 
 };
 
+let lastNavigation = 'null';
+let lastNodeID = -1;
+let jumpToCousin = false;
+
 const navigate = (canvas: Canvas, direction: string) => {
 	const currentSelection = canvas.selection;
 	if (currentSelection.size !== 1) return;
+	const selectedNode = currentSelection.entries().next().value[0];
+	if (selectedNode.isEditing) return;
 
-	// Check if the selected node is editing
-	if (currentSelection.values().next().value.isEditing) return;
+	const incomingEdges = canvas.getEdgesForNode(selectedNode).filter((edge) => edge.to.node.id === selectedNode.id);
+	let parentNode = null;
+	if (incomingEdges.length > 0) {
+		parentNode = incomingEdges[0].from.node;
+	}
 
-	const selectedItem = currentSelection.values().next().value as CanvasNode;
-	const viewportNodes = canvas.getViewportNodes();
-	const {x, y, width, height} = selectedItem;
-
-	canvas.deselectAll();
-
-	const isVertical = direction === "top" || direction === "bottom";
-	const comparePrimary = isVertical ? (a: CanvasNode, b: CanvasNode) => a.y - b.y : (a: CanvasNode, b: CanvasNode) => a.x - b.x;
-	const compareSecondary = isVertical ? (a: CanvasNode, b: CanvasNode) => a.x - b.x : (a: CanvasNode, b: CanvasNode) => a.y - b.y;
-	const filterCondition = (node: CanvasNode) => {
-		const inRange = isVertical
-			? node.x < x + width / 2 && node.x + node.width > x + width / 2
-			: node.y < y + height / 2 && node.y + node.height > y + height / 2;
-		const directionCondition = direction === "top" ? node.y < y : direction === "bottom" ? node.y > y : direction === "left" ? node.x < x : node.x > x;
-		return inRange && directionCondition;
+	let nextNode = null;
+	let compare = (a: CanvasNode, b: CanvasNode) => {
+		// select the closest child
+		if (direction === "right") return Math.abs(a.y - selectedNode.y) - Math.abs(b.y - selectedNode.y);
+		const effectiveUpA = a.y - selectedNode.y < 0 ? selectedNode.y - a.y : 10000 - a.y;
+		const effectiveUpB = b.y - selectedNode.y < 0 ? selectedNode.y - b.y : 10000 - b.y;
+		if (direction === "bottom") {
+			// select the closest sibling below, if notexist, select the farthest sibling above
+			return effectiveUpB -effectiveUpA;
+		} else if(direction === "top") {
+			return effectiveUpA - effectiveUpB;
+		} else {
+			return 0;
+		}
 	};
+	switch (direction) {
+		case "top":
+		case "bottom":
+		if (!parentNode) return;
+		const siblings = Array.from(canvas.nodes.values()).filter(node =>
+			canvas.getEdgesForNode(node).some(edge => edge.from.node === parentNode && edge.to.node !== selectedNode) && node.id !== parentNode.id
+		);
+		// add all the cousin to the siblings
+		if (jumpToCousin && lastNavigation === direction && lastNodeID === selectedNode.id) {
+			const incomingEdges = canvas.getEdgesForNode(parentNode).filter(edge => edge.to.node === parentNode);
+			if (incomingEdges.length > 0) {
+				const grandParentNode = incomingEdges[0].from.node;
+				const unclesNodes = Array.from(canvas.nodes.values()).filter(node =>
+					canvas.getEdgesForNode(node).some(edge => edge.from.node === grandParentNode && edge.to.node !== parentNode) && node.id !== grandParentNode.id
+				);
+				for(let i = 0; i < unclesNodes.length; i++) {
+					const uncle = unclesNodes[i];
+					const cousin = Array.from(canvas.nodes.values()).filter(node =>
+						canvas.getEdgesForNode(node).some(edge => edge.from.node === uncle ) && node.id !== uncle.id
+					);
+					siblings.push(...cousin);
+				}
+			}
+		}
+		jumpToCousin = true;
+		if (siblings.length > 0) {
+			const sortedSiblings = siblings.sort(compare);
+			if (direction === "top" && sortedSiblings[0].y > selectedNode.y) {
+				nextNode = selectedNode;
+			} else if (direction === "bottom" && sortedSiblings[0].y < selectedNode.y) {
+				nextNode = selectedNode;
+			} else{
+				nextNode = sortedSiblings[0];
+				jumpToCousin = false;
+			}
+		} else{
+			nextNode = selectedNode;
+		}
+		break;
 
-	const filteredNodes = viewportNodes.filter(filterCondition);
-	const sortedNodes = filteredNodes.length > 0 ? filteredNodes.sort(comparePrimary) : viewportNodes.filter((node: CanvasNode) => direction === "top" ? node.y < y : direction === "bottom" ? node.y > y : direction === "left" ? node.x < x : node.x > x).sort(compareSecondary);
-	const nextNode = sortedNodes[0];
+		case "left":
+		if (parentNode) {
+			nextNode = parentNode;
+		}
+		break;
+
+		case "right":
+		const children = Array.from(canvas.nodes.values()).filter(node => 
+			canvas.getEdgesForNode(node).some(edge =>  edge.from.node === selectedNode ) && node.id !== selectedNode.id 
+		);
+		if (children.length > 0) {
+			const closestChildren = children.sort(compare);
+			nextNode = closestChildren[0];
+		}
+		break;
+	}
 
 	if (nextNode) {
+		lastNavigation = direction;
+		lastNodeID = selectedNode.id;
 		canvas.selectOnly(nextNode);
 		canvas.zoomToSelection();
 	}
-
 	return nextNode;
-};
+}
 
 const createFloatingNode = (canvas: any, direction: string) => {
 	let selection = canvas.selection;
@@ -411,7 +474,7 @@ export default class CanvasMindMap extends Plugin {
 							});
 						}
 
-						this.scope.register(["Meta"], "Enter", async () => {
+						this.scope.register(["Shift"], "Enter", async () => {
 							const selection = this.canvas.selection;
 							if(selection.size !== 1) return;
 

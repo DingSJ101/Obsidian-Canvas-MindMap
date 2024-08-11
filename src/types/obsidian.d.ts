@@ -133,6 +133,7 @@ declare module 'obsidian' {
 		bbox: CanvasCoords;
 		unknownData: CanvasNodeUnknownData;
 		renderedZIndex: number;
+		isEditing: boolean;
 
 		headerComponent: Component;
 
