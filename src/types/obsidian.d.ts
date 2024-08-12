@@ -1,6 +1,6 @@
 import 'obsidian';
 import { MarkdownView, TFile } from 'obsidian';
-import { CanvasData } from 'obsidian/canvas';
+import { CanvasData, CanvasNodeData } from 'obsidian/canvas';
 
 export interface CanvasNodeUnknownData {
 	id: string;
@@ -123,12 +123,13 @@ declare module 'obsidian' {
 	}
 
 	interface CanvasNode {
-		id: CanvasNodeID;
-
+		id: CanvasNodeID; // in unknownData
+		type: 'text' | 'file' | 'link' | 'group'; // in unknownData
 		x: number;
 		y: number;
 		width: number;
 		height: number;
+		color: string;
 		zIndex: number;
 		bbox: CanvasCoords;
 		unknownData: CanvasNodeUnknownData;
@@ -150,6 +151,8 @@ declare module 'obsidian' {
 		moveTo({x, y}: { x: number, y: number }): void;
 
 		render(): void;
+
+		getData(): CanvasNodeData;
 	}
 
 	interface CanvasTextNode extends CanvasNode {

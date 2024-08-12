@@ -1,6 +1,6 @@
 import { Canvas, CanvasEdge, CanvasNode, ItemView, Plugin, requireApiVersion, SettingTab, TFile } from 'obsidian';
 import { around } from "monkey-around";
-import { addEdge, addNode, buildTrees, createChildFileNode, random } from "./utils";
+import { addEdge, addNode, adjustLayout, buildTrees, createChildFileNode, random } from "./utils";
 import { DEFAULT_SETTINGS, MindMapSettings, MindMapSettingTab } from "./mindMapSettings";
 import { CanvasEdgeData } from "obsidian/canvas";
 import { dir } from 'console';
@@ -231,20 +231,20 @@ const createSiblingNode = async (canvas: Canvas, ignored: boolean) => {
 	const newYPosition = selectedNode.y + selectedNode.height / 2 + 110;
 	const newChildNode = await childNode(canvas, parentNode, newYPosition);
 
-	const leftSideEdges = canvas.getEdgesForNode(parentNode).filter((edge: CanvasEdge) => edge.from.node.id === parentNode.id && edge.to.side === "left");
+	// const leftSideEdges = canvas.getEdgesForNode(parentNode).filter((edge: CanvasEdge) => edge.from.node.id === parentNode.id && edge.to.side === "left");
 
-	let nodes = leftSideEdges.map((edge: CanvasEdge) => edge.to.node);
-	let totalHeight = nodes.reduce((acc: number, node: CanvasNode) => acc + node.height + 20, 0);
+	// let nodes = leftSideEdges.map((edge: CanvasEdge) => edge.to.node);
+	// let totalHeight = nodes.reduce((acc: number, node: CanvasNode) => acc + node.height + 20, 0);
 
-	nodes.sort((a, b) => a.y - b.y);
+	// nodes.sort((a, b) => a.y - b.y);
 
-	if (nodes.length <= 1) return;
-	if (nodes.length > 1 && nodes[0].x === nodes[1]?.x) {
-		nodes.forEach((node: CanvasNode, index: number) => {
-			const yPos = index === 0 ? parentNode.y + parentNode.height / 2 - totalHeight / 2 : nodes[index - 1].y + nodes[index - 1].height + 20;
-			node.moveTo({x: selectedNode.x, y: yPos});
-		});
-	}
+	// if (nodes.length <= 1) return;
+	// if (nodes.length > 1 && nodes[0].x === nodes[1]?.x) {
+	// 	nodes.forEach((node: CanvasNode, index: number) => {
+	// 		const yPos = index === 0 ? parentNode.y + parentNode.height / 2 - totalHeight / 2 : nodes[index - 1].y + nodes[index - 1].height + 20;
+	// 		node.moveTo({x: selectedNode.x, y: yPos});
+	// 	});
+	// }
 
 	canvas.requestSave();
 	return newChildNode;
@@ -491,6 +491,7 @@ export default class CanvasMindMap extends Plugin {
 
 							setTimeout(() => {
 								const realNode = this.canvas.nodes?.get(node.id);
+								adjustLayout(this.canvas, realNode);
 								realNode?.startEditing();
 								this.canvas.zoomToSelection();
 							}, 0);
@@ -543,47 +544,7 @@ export default class CanvasMindMap extends Plugin {
 
 								next.call(this, e);
 
-								let wholeHeight = 0;
-								let parentEdges = this.getEdgesForNode(parentNode).filter((item: any) => {
-									return (item.from.node.id === parentNode.id && item.to.side === "left");
-								});
-
-								let allnodes = [];
-								for (let i = 0; i < parentEdges.length; i++) {
-									let node = parentEdges[i].to.node;
-									allnodes.push(node);
-									wholeHeight += (node.height + 20);
-								}
-								allnodes.sort((a: any, b: any) => {
-									return a.y - b.y;
-								});
-
-								// Check if this is a Mindmap
-								if (allnodes.length === 1) return;
-								if (allnodes.length > 1) {
-									if (allnodes[0].x !== allnodes[0].x) {
-										return;
-									}
-								}
-
-								let preNode;
-								for (let i = 0; i < allnodes.length; i++) {
-									let tempNode;
-									if (i === 0) {
-										(tempNode = allnodes[i]).moveTo({
-											x: childNode.x,
-											y: parentNode.y + parentNode.height - (wholeHeight / 2)
-										});
-									} else {
-										(tempNode = allnodes[i]).moveTo({
-											x: childNode.x,
-											y: preNode.y + preNode.height + 20
-										});
-									}
-									this.requestSave();
-									preNode = tempNode;
-								}
-
+								adjustLayout(this,childNode);
 								this.requestSave();
 
 								this.selectOnly(parentNode);
